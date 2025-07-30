@@ -12,6 +12,38 @@ static void port_init(void){
 	FlushBuf(&o_fifo);
 }
 
+// Function to process USB VCP received data into input FIFO
+void USB_VCP_DataReceived() {
+    uint8_t received_data[64];
+    uint32_t received_len = 0;
+    
+    if (VCP_Received) {
+        Read_VCP(received_data, &received_len);
+        
+        // Put received data into input FIFO
+        for (uint32_t i = 0; i < received_len; i++) {
+            PutChar(&i_fifo, received_data[i]);
+        }
+    }
+}
+
+// Function to send data from output FIFO to USB VCP
+void USB_VCP_DataTransmit() {
+    static uint8_t tx_buffer[64];
+    uint32_t tx_count = 0;
+    
+    // Get data from output FIFO
+    while (GetLen(&o_fifo) > 0 && tx_count < 64) {
+        tx_buffer[tx_count] = GetChar(&o_fifo);
+        tx_count++;
+    }
+    
+    // Send data if we have any
+    if (tx_count > 0) {
+        Write_VCP(tx_buffer, tx_count);
+    }
+}
+
 Socket::Socket():
     ABstractSocket()
 {

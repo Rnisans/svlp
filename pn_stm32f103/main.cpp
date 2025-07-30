@@ -212,19 +212,24 @@ int main(void) {
 
     while(1) {
         USB_MANAGEMENT();
+        
+        // Process USB VCP data through socket buffers
+        USB_VCP_DataReceived();   // Handle incoming USB data
+        USB_VCP_DataTransmit();   // Send outgoing socket data via USB
+        
         updateTemp();
         temperature = getTemp();
         
-        // РќР°РІС‹Р№ РјРµС‚РѕРґ: РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ SVLP РїСЂРѕС‚РѕРєРѕР»Р° РґР»СЏ РѕС‚РїСЂР°РІРєРё С‚РµР»РµРјРµС‚СЂРёРё
+        // Новый метод: использование SVLP протокола для отправки телеметрии
         SendTelemetrySVLP(writer, temperature, PID());
         
-        // РђР»СЊС‚РµСЂРЅР°С‚РёРІРЅС‹Р№ РјРµС‚РѕРґ: РѕС‚РїСЂР°РІРєР° С‚РµРєСЃС‚РѕРІРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ С‡РµСЂРµР· SVLP
+        // Альтернативный метод: отправка текстового сообщения через SVLP
         char message[20];
         memset(message, 0, 20);
         snprintf(message, sizeof(message), "%.2f,%d\r\n", temperature, PID());
         SendMsgSVLP(writer, message, 1);
         
-        // РЎС‚Р°СЂС‹Р№ РјРµС‚РѕРґ (РєРѕРјРјРµРЅС‚РёСЂСѓРµРј):
+        // Старый метод (комментируем):
         // SendMsg(message);
         
 		Delay_ms_USB(1000);
