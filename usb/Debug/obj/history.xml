@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<history>
+   <processor signature="arm-none-eabi-gcc 4.9.2 i686-w64-mingw32 -mcpu=cortex-m3 -mthumb -Wall -ffunction-sections -g -O0 -c -DSTM32F103C8 -DSTM32F10X_MD -DUSE_STDPERIPH_DRIVER -D__ASSEMBLY__ -ID:\Work\pn_kpa -ID:\Work\pn_kpa\cmsis_boot -ID:\Work\pn_kpa\usb_lib -ID:\Work -ID:\Work\pn_kpa\usb_lib\inc -ID:\Work\pn_kpa\stm_lib\inc -ID:\Work\pn_kpa\stm_lib -ID:\Work\pn_kpa\cmsis">
+      <target file="stm32f10x_rcc.o" lastModified="198505bca29">
+         <source file="..\..\..\stm_lib\src\stm32f10x_rcc.c" lastModified="1978c304498"/>
+      </target>
+      <target file="startup_stm32f10x_md.o" lastModified="198505bc92f">
+         <source file="..\..\..\cmsis_boot\startup\startup_stm32f10x_md.c" lastModified="1978c304498"/>
+      </target>
+      <target file="system_stm32f10x.o" lastModified="198505bc8db">
+         <source file="..\..\..\cmsis_boot\system_stm32f10x.c" lastModified="1978c304498"/>
+      </target>
+      <target file="USB-VCP.o" lastModified="198505bca9e">
+         <source file="..\..\..\usb_lib\src\USB-VCP.c" lastModified="1978c304498"/>
+      </target>
+   </processor>
+</history>
