@@ -11,6 +11,7 @@ extern "C" {
 #include "headers/svlp_writer.h"
 }
 
+#include "socket/socket_1.h"  // Add socket header
 
 // Р¤СѓРЅРєС†РёСЏ РїРµСЂРµРІРѕРґР° РёР· СЃС‚СЂРѕРєРё РІ float
 float custom_atof(const char *str) {
@@ -113,7 +114,48 @@ void SendMsg(const char *text) {
 	Write_VCP((uint8_t*)text, length);
 }
 
-// Р�РЅРёС†РёР°Р»РёР·Р°С†РёСЏ РЁР�Рњ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РЅР°РіСЂРµРІР°С‚РµР»РµРј
+// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РѕС‚РїСЂР°РІРєРё СЃРѕРѕР±С‰РµРЅРёР№ С‡РµСЂРµР· SVLP РїСЂРѕС‚РѕРєРѕР»
+void SendMsgSVLP(svlp::SVLP_Writer& writer, const char* text, uint8_t msg_code = 1) {
+    if(text == NULL) return;
+    
+    // РїСЂРµРѕР±СЂР°Р·РѕРІРР°С‚СЊ СЃС‚СЂРѕРєСѓ РІ Р±СѓС„РµСЂ
+    size_t text_len = strlen(text);
+    
+    // РЎРѕР·РґР°С‚СЊ SVLP СЃРѕРѕР±С‰РµРЅРёРµ СЃ С‚РµР»РµРјРµС‚СЂРёРµР№
+    svlp::svlp_message msg = writer.create_svlp_message(
+        svlp::infocode_telemetry,  // РўРёРї СЃРѕРѕР±С‰РµРЅРёСЏ - С‚РµР»РµРјРµС‚СЂРёСЏ
+        msg_code,                   // РљРѕРґ СЃРѕРѕР±С‰РµРЅРёСЏ
+        text,                       // РџР°СЂР°РјРµС‚СЂС‹ (С‚РµРєСЃС‚)
+        text_len                    // Р Р°Р·РјРµСЂ РїР°СЂР°РјРµС‚СЂРѕРІ
+    );
+    
+    // РћС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ
+    writer.send_message(msg);
+}
+
+// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РѕС‚РїСЂР°РІРєРё СЃС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅС‹С… РґР°РЅРЅС‹С… (С‚РµРјРїРµСЂР°С‚СѓСЂР° Рё РјРѕС‰РЅРѕСЃС‚СЊ)
+struct TelemetryData {
+    float temperature;
+    int power;
+};
+
+void SendTelemetrySVLP(svlp::SVLP_Writer& writer, float temp, int power) {
+    TelemetryData data;
+    data.temperature = temp;
+    data.power = power;
+    
+    // РЎРѕР·РґР°С‚СЊ SVLP СЃРѕРѕР±С‰РµРЅРёРµ СЃРѕ СЃС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅС‹РјРё РґР°РЅРЅС‹РјРё
+    svlp::svlp_message msg = writer.create_svlp_message(
+        svlp::infocode_telemetry,  // РўРёРї СЃРѕРѕР±С‰РµРЅРёСЏ - С‚РµР»РµРјРµС‚СЂРёСЏ
+        1,                         // РљРѕРґ СЃРѕРѕР±С‰РµРЅРёСЏ РґР»СЏ С‚РµР»РµРјРµС‚СЂРёРё
+        data                       // РЎС‚СЂСѓРєС‚СѓСЂР° СЃ РґР°РЅРЅС‹РјРё
+    );
+    
+    // РћС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ
+    writer.send_message(msg);
+}
+
+// РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РЁР�Рњ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РЅР°РіСЂРµРІР°С‚РµР»РµРј
 void TIMEInit(void) {
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
 
@@ -162,16 +204,29 @@ int main(void) {
     SysTick_Init();
     temperatureInit();
 
+    // Create socket instance for SVLP communication
+    Socket socket;
+    socket.open();
+    
     svlp::SVLP_Writer writer(socket, true);
 
     while(1) {
         USB_MANAGEMENT();
         updateTemp();
         temperature = getTemp();
+        
+        // РќР°РІС‹Р№ РјРµС‚РѕРґ: РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ SVLP РїСЂРѕС‚РѕРєРѕР»Р° РґР»СЏ РѕС‚РїСЂР°РІРєРё С‚РµР»РµРјРµС‚СЂРёРё
+        SendTelemetrySVLP(writer, temperature, PID());
+        
+        // РђР»СЊС‚РµСЂРЅР°С‚РёРІРЅС‹Р№ РјРµС‚РѕРґ: РѕС‚РїСЂР°РІРєР° С‚РµРєСЃС‚РѕРІРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ С‡РµСЂРµР· SVLP
         char message[20];
         memset(message, 0, 20);
         snprintf(message, sizeof(message), "%.2f,%d\r\n", temperature, PID());
-		SendMsg(message);
+        SendMsgSVLP(writer, message, 1);
+        
+        // РЎС‚Р°СЂС‹Р№ РјРµС‚РѕРґ (РєРѕРјРјРµРЅС‚РёСЂСѓРµРј):
+        // SendMsg(message);
+        
 		Delay_ms_USB(1000);
     }
 }
