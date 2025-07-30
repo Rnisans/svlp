@@ -8,20 +8,29 @@ extern "C" {
 	#include "Temperature18B20.h"
 	#include "stm32f10x_tim.h"
 	#include "delay/Delay_us.h"
-#include "headers/svlp_writer.h"
 }
 
+// Include SVLP library headers
+#include "svlp_lib/headers/svlp_writer.h"
+#include "usb_socket.h"
 
-// Р¤СѓРЅРєС†РёСЏ РїРµСЂРµРІРѕРґР° РёР· СЃС‚СЂРѕРєРё РІ float
+// Temperature and power data structure for SVLP
+struct TemperatureData {
+    float current_temperature;
+    float target_temperature;
+    int power_output;
+};
+
+// Function to convert string to float
 float custom_atof(const char *str) {
     float result = 0.0f;
     float fraction = 0.1f;
     int sign = 1;
 
-    // РџСЂРѕРїСѓСЃРєР°РµРј РїСЂРѕР±РµР»С‹
+    // Skip spaces
     while (*str == ' ') str++;
 
-    // РћР±СЂР°Р±Р°С‚С‹РІР°РµРј Р·РЅР°Рє
+    // Handle sign
     if (*str == '-') {
         sign = -1;
         str++;
@@ -29,13 +38,13 @@ float custom_atof(const char *str) {
         str++;
     }
 
-    // РћР±СЂР°Р±Р°С‚С‹РІР°РµРј С†РµР»СѓСЋ С‡Р°СЃС‚СЊ
+    // Handle integer part
     while (*str >= '0' && *str <= '9') {
         result = result * 10.0f + (*str - '0');
         str++;
     }
 
-    // РћР±СЂР°Р±Р°С‚С‹РІР°РµРј РґСЂРѕР±РЅСѓСЋ С‡Р°СЃС‚СЊ
+    // Handle decimal part
     if (*str == '.') {
         str++;
 
@@ -48,44 +57,44 @@ float custom_atof(const char *str) {
     return sign * result;
 }
 
-float targetTemperature = 0; // Р¦РµР»РµРІР°СЏ С‚РµРјРїРµСЂР°С‚СѓСЂР°
+float targetTemperature = 0; // Target temperature
 char temp_str[20];
 uint32_t cmp_len = 0;
 float SendTemp = 0;
 
-// PID-РєРѕСЌС„С„РёС†РёРµРЅС‚С‹
+// PID coefficients
 const float Kp = 12.0f;
 const float Ki = 0.4f;
 const float Kd = 4.0f;
 
-// РћРіСЂР°РЅРёС‡РµРЅРёРµ РёРЅС‚РµРіСЂР°Р»СЊРЅРѕР№ С‡Р°СЃС‚Рё
+// Integral limits
 const float IntMax = 50;
 const float IntMin = -50;
 
-// РћС€РёР±РєРё
-float errorPrevious = 0; // РџСЂРµРґС‹РґСѓС‰Р°СЏ РѕС€РёР±РєР°
-float Integral = 0; // РќР°РєРѕРїР»РµРЅРЅС‹Р№ РёРЅС‚РµРіСЂР°Р»
+// Errors
+float errorPrevious = 0; // Previous error
+float Integral = 0; // Accumulated integral
 
-// PID-СЂРµРіСѓР»СЏС‚РѕСЂ
+// PID controller
 int PID(){
 	Read_VCP((uint8_t*)temp_str, &cmp_len);
 	targetTemperature = custom_atof(temp_str);
 
-	float error = targetTemperature - temperature; // РћС€РёР±РєР° С‚РµРєСѓС‰РµР№ С‚РµРјРїРµСЂР°С‚СѓСЂС‹
-	float P = Kp * error;// РљРѕРјРїРѕРЅРµРЅС‚ P
+	float error = targetTemperature - temperature; // Current temperature error
+	float P = Kp * error;// P component
 	Integral += Ki * error;
 
-	//РћРіСЂР°РЅРёС‡РµРЅРёРµ РёРЅС‚РµРіСЂР°Р»СЊРЅРѕР№ С‡Р°СЃС‚Рё
+	//Integral limitation
 	if (Integral > IntMax){
 		Integral = IntMax;
 	}
 	if (Integral < IntMin){
 		Integral = IntMin;
 	}
-	float I = Integral;// РљРѕРјРїРЅРµРЅС‚ I
+	float I = Integral;// I component
 
 	float derivative = error - errorPrevious;
-	float D = Kd * derivative;// РљРѕРјРїРѕРЅРµРЅС‚ D
+	float D = Kd * derivative;// D component
 
 	int Power = P + I + D;
 	if (Power > 100){
@@ -99,21 +108,57 @@ int PID(){
 	return Power;
 }
 
-// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РѕС‚РїСЂР°РІРєРё СЃРѕРѕР±С‰РµРЅРёР№ С‡РµСЂРµР· USB VCP
-void SendMsg(const char *text) {
-	if(text == NULL) return;
-	int length = -1;
-	const char *str = text;
-	while (*str) {
-		if ((*str & 0xC0) != 0x80) {
-			length++;
-		}
-		str++;
-	}
-	Write_VCP((uint8_t*)text, length);
+// Global USB socket and SVLP writer
+svlp::USBSocket usbSocket;
+svlp::SVLP_Writer* writer = nullptr;
+
+// SVLP message codes (you can define your own protocol)
+#define MSG_CODE_TEMPERATURE_DATA  0x01
+#define MSG_CODE_STATUS           0x02
+#define MSG_CODE_ERROR            0x03
+
+// Function to send temperature data using SVLP
+void SendTemperatureData(float currentTemp, float targetTemp, int power) {
+    if (!writer) return;
+    
+    TemperatureData data;
+    data.current_temperature = currentTemp;
+    data.target_temperature = targetTemp;
+    data.power_output = power;
+    
+    // Create SVLP message with temperature data
+    svlp::svlp_message msg = writer->create_svlp_message(
+        0x00,  // info_code (you can define your own)
+        MSG_CODE_TEMPERATURE_DATA,
+        data   // The temperature data structure
+    );
+    
+    // Send the message
+    writer->send_message(msg);
 }
 
-// Р�РЅРёС†РёР°Р»РёР·Р°С†РёСЏ РЁР�Рњ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РЅР°РіСЂРµРІР°С‚РµР»РµРј
+// Function to send status messages using SVLP
+void SendStatusMsg(const char* status) {
+    if (!writer || !status) return;
+    
+    // Create SVLP message with status string
+    svlp::svlp_message msg = writer->create_svlp_message(
+        0x00,  // info_code
+        MSG_CODE_STATUS,
+        status,
+        strlen(status)
+    );
+    
+    // Send the message
+    writer->send_message(msg);
+}
+
+// Legacy function for backward compatibility (now uses SVLP)
+void SendMsg(const char *text) {
+	SendStatusMsg(text);
+}
+
+// Timer initialization for heater control
 void TIMEInit(void) {
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
 
@@ -147,13 +192,13 @@ void TIMEInit(void) {
 }
 
 int main(void) {
-    // РќР°СЃС‚СЂРѕР№РєР° РїР°СЂР°РјРµС‚СЂРѕРІ USB РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
+    // USB default parameter setup
     LC_DATA_RATE = 115200;
     LC_STOP_BITS = 0;
     LC_PARITY_TYPE = 0;
     LC_N_BITS_DATA = 8;
 
-    // РћС‚РєР»СЋС‡РµРЅРёРµ РІСЃРµС… РїСЂРµСЂС‹РІР°РЅРёР№
+    // Disable all interrupts
     NVIC->ICER[0] = 0xFFFFFFFF;
 
     ClockInit();
@@ -162,16 +207,23 @@ int main(void) {
     SysTick_Init();
     temperatureInit();
 
-    svlp::SVLP_Writer writer(socket, true);
+    // Initialize USB socket and SVLP writer
+    usbSocket.open();
+    writer = new svlp::SVLP_Writer(usbSocket, true); // Enable CRC
+    
+    // Send initialization message
+    SendStatusMsg("System initialized");
 
     while(1) {
         USB_MANAGEMENT();
         updateTemp();
         temperature = getTemp();
-        char message[20];
-        memset(message, 0, 20);
-        snprintf(message, sizeof(message), "%.2f,%d\r\n", temperature, PID());
-		SendMsg(message);
-		Delay_ms_USB(1000);
+        
+        int powerOutput = PID();
+        
+        // Send structured temperature data using SVLP
+        SendTemperatureData(temperature, targetTemperature, powerOutput);
+        
+        Delay_ms_USB(1000);
     }
 }
