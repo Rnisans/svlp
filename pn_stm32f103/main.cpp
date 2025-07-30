@@ -8,9 +8,10 @@ extern "C" {
 	#include "Temperature18B20.h"
 	#include "stm32f10x_tim.h"
 	#include "delay/Delay_us.h"
-#include "headers/svlp_writer.h"
 }
 
+// C++ headers must be outside extern "C" block
+#include "headers/svlp_writer.h"
 #include "socket/socket_1.h"  // Add socket header
 
 // Р¤СѓРЅРєС†РёСЏ РїРµСЂРµРІРѕРґР° РёР· СЃС‚СЂРѕРєРё РІ float
